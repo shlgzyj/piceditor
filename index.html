@@ -1,0 +1,1100 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>图片编辑器</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:       #ffebbc;
+  --yellow:   #ffc927;
+  --lyr-yel:  #fff273;
+  --del-red:  #ff8181;
+  --white:    #ffffff;
+  --black:    #000000;
+  --border-t: rgba(255,255,255,0.37);
+  --radius:   18px;
+  --font:     'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  font-family: var(--font);
+  overflow: hidden;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+}
+
+/* ─── Top Bar ─────────────────────────────────────── */
+#topbar {
+  flex-shrink: 0;
+  margin: 8px 8px 4px;
+  padding: 0 14px;
+  height: 73px;
+  background: var(--yellow);
+  border: 6px solid var(--border-t);
+  border-radius: var(--radius);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+#topbar-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--black);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.size-input {
+  width: 63px;
+  height: 31px;
+  border-radius: 12px;
+  border: 3px solid transparent;
+  background: #fbfbfb;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: var(--font);
+  color: var(--black);
+  outline: none;
+  flex-shrink: 0;
+  transition: border-color .15s;
+}
+.size-input:focus { border-color: rgba(0,0,0,0.25); }
+
+.x-sep {
+  width: 13px;
+  height: 5px;
+  background: var(--black);
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+#apply-btn {
+  height: 28px;
+  padding: 0 9px;
+  background: rgba(255,255,255,0.55);
+  border: 2px solid rgba(0,0,0,0.2);
+  border-radius: 10px;
+  font-size: 11px;
+  font-family: var(--font);
+  font-weight: 600;
+  color: var(--black);
+  cursor: pointer;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+#apply-btn:active { background: rgba(255,255,255,0.85); }
+
+#export-btn {
+  margin-left: auto;
+  width: 71px;
+  height: 31px;
+  background: var(--white);
+  border: 3px solid var(--black);
+  border-radius: 12px;
+  font-size: 15px;
+  font-family: var(--font);
+  font-weight: 500;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background .1s;
+}
+#export-btn:active { background: #f0f0f0; }
+
+/* ─── Editor Viewport ─────────────────────────────── */
+#editor-viewport {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+  touch-action: none;
+}
+
+#editor-container {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform-origin: 0 0;
+  /* JS sets: translate(calc(-50%+tx), calc(-50%+ty)) scale(s) */
+}
+
+#canvas-area {
+  position: relative;
+  background: var(--white);
+  box-shadow: 0 6px 32px rgba(0,0,0,0.18);
+  overflow: hidden;
+}
+
+/* empty state */
+#empty-hint {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  pointer-events: none;
+  opacity: 0.28;
+}
+#empty-hint svg { width: 52px; height: 52px; }
+#empty-hint p { font-size: 13px; font-weight: 500; }
+
+/* ─── Image Layers ────────────────────────────────── */
+.img-layer {
+  position: absolute;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: grab;
+}
+.img-layer:active { cursor: grabbing; }
+.img-layer img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  pointer-events: none;
+  -webkit-user-drag: none;
+  draggable: false;
+}
+.img-layer.selected {
+  outline: 4px solid #ffbb1e;
+  outline-offset: 0;
+  z-index: 100 !important;
+}
+
+/* resize handle – top-right blue circle */
+.resize-handle {
+  position: absolute;
+  top: -26px;
+  right: -26px;
+  width: 52px;
+  height: 52px;
+  background: #0083ff;
+  border-radius: 50%;
+  align-items: center;
+  justify-content: center;
+  display: none;
+  touch-action: none;
+  cursor: nwse-resize;
+  box-shadow: 0 2px 8px rgba(0,131,255,0.4);
+  z-index: 200;
+}
+.img-layer.selected .resize-handle { display: flex; }
+
+/* ─── Layer Panel (bottom-sheet drawer) ──────────── */
+#layer-panel {
+  position: fixed;
+  bottom: 0;
+  left: 8px;
+  right: 8px;
+  height: 120px;           /* JS controls this */
+  background: var(--yellow);
+  border: 6px solid var(--border-t);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 12px 12px;
+  overflow: hidden;
+  z-index: 500;
+  will-change: height;
+  touch-action: none;
+}
+
+/* drag bar at top of drawer */
+#drawer-bar {
+  flex-shrink: 0;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+#drawer-bar:active { cursor: grabbing; }
+
+#drawer-pill {
+  width: 40px;
+  height: 5px;
+  background: rgba(0, 0, 0, 0.22);
+  border-radius: 999px;
+  transition: background .15s;
+}
+#drawer-bar:active #drawer-pill { background: rgba(0,0,0,0.4); }
+
+#layers-scroll {
+  overflow-y: auto;
+  overflow-x: hidden;
+  touch-action: pan-y;
+  flex: 1;
+  min-height: 0;
+}
+
+#layers-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 1px 0;
+}
+
+/* ─── Layer Item ──────────────────────────────────── */
+.layer-item {
+  flex-shrink: 0;
+  height: 56px;
+  background: var(--lyr-yel);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  padding: 0 10px 0 0;
+  gap: 8px;
+  transition: opacity .15s;
+  position: relative;
+}
+.layer-item.is-dragging { opacity: 0.35; }
+.layer-item.drag-over-top    { border-top: 3px solid #ffa500; }
+.layer-item.drag-over-bottom { border-bottom: 3px solid #ffa500; }
+
+.drag-handle {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 12px 10px;
+  cursor: grab;
+  touch-action: none;
+  flex-shrink: 0;
+}
+.drag-handle span {
+  width: 18px;
+  height: 3px;
+  background: var(--black);
+  border-radius: 999px;
+  display: block;
+  pointer-events: none;
+}
+
+.layer-thumb {
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  object-fit: cover;
+  flex-shrink: 0;
+  pointer-events: none;
+}
+
+.layer-name {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--black);
+}
+
+.delete-btn {
+  flex-shrink: 0;
+  width: 52px;
+  height: 31px;
+  background: var(--del-red);
+  border: none;
+  border-radius: 10px;
+  color: var(--white);
+  font-size: 14px;
+  font-family: var(--font);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background .1s;
+}
+.delete-btn:active { background: #d96060; }
+
+/* ─── Bottom actions ──────────────────────────────── */
+#bottom-row {
+  display: flex;
+  justify-content: center;
+  flex-shrink: 0;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+#upload-btn {
+  width: 155px;
+  height: 56px;
+  background: var(--white);
+  border: 4px solid var(--black);
+  border-radius: 15px;
+  font-size: 16px;
+  font-family: var(--font);
+  cursor: pointer;
+  box-shadow: 4px 5px 0 var(--black);
+  transition: transform .1s, box-shadow .1s;
+  font-weight: 500;
+}
+#upload-btn:active {
+  transform: translate(2px, 2px);
+  box-shadow: 2px 3px 0 var(--black);
+}
+
+#file-input { display: none; }
+
+/* ─── Drag Ghost ──────────────────────────────────── */
+.layer-ghost {
+  position: fixed;
+  pointer-events: none;
+  z-index: 9999;
+  background: var(--lyr-yel);
+  border-radius: 12px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  padding: 0 10px 0 0;
+  gap: 8px;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.22);
+  opacity: 0.92;
+}
+</style>
+</head>
+<body>
+
+<!-- Top Bar -->
+<div id="topbar">
+  <span id="topbar-label">图片尺寸</span>
+  <input class="size-input" id="iw" type="number" value="300" min="50" max="4000">
+  <div class="x-sep"></div>
+  <input class="size-input" id="ih" type="number" value="300" min="50" max="4000">
+  <button id="apply-btn">应用</button>
+  <button id="export-btn">导出</button>
+</div>
+
+<!-- Editor -->
+<div id="editor-viewport">
+  <div id="editor-container">
+    <div id="canvas-area">
+      <div id="empty-hint">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="1.5" stroke-linecap="round">
+          <rect x="3" y="3" width="18" height="18" rx="2"/>
+          <circle cx="8.5" cy="8.5" r="1.5"/>
+          <path d="M21 15l-5-5L5 21"/>
+        </svg>
+        <p>上传图片开始编辑</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Layer Panel -->
+<div id="layer-panel">
+  <div id="drawer-bar"><div id="drawer-pill"></div></div>
+  <div id="layers-scroll">
+    <div id="layers-list"></div>
+  </div>
+  <div id="bottom-row">
+    <input type="file" id="file-input" accept="image/*" multiple>
+    <button id="upload-btn">上传图片</button>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+/* ══════════════════════════════════════════════════
+   State
+══════════════════════════════════════════════════ */
+let layers     = [];   // { id, name, src, x, y, width, height, element }
+let selectedId = null;
+let nextId     = 1;
+
+// viewport transform
+let vScale = 0.9;
+let vTX    = 0;
+let vTY    = 0;
+
+/* ══════════════════════════════════════════════════
+   DOM refs
+══════════════════════════════════════════════════ */
+const viewport  = document.getElementById('editor-viewport');
+const container = document.getElementById('editor-container');
+const canvas    = document.getElementById('canvas-area');
+const layerList = document.getElementById('layers-list');
+const fileInput = document.getElementById('file-input');
+const iw        = document.getElementById('iw');
+const ih        = document.getElementById('ih');
+const emptyHint = document.getElementById('empty-hint');
+
+/* ══════════════════════════════════════════════════
+   Canvas size
+══════════════════════════════════════════════════ */
+function applySize() {
+  const w = Math.max(50, parseInt(iw.value) || 300);
+  const h = Math.max(50, parseInt(ih.value) || 300);
+  iw.value = w;
+  ih.value = h;
+  canvas.style.width  = w + 'px';
+  canvas.style.height = h + 'px';
+}
+document.getElementById('apply-btn').addEventListener('click', applySize);
+iw.addEventListener('keydown', e => e.key === 'Enter' && applySize());
+ih.addEventListener('keydown', e => e.key === 'Enter' && applySize());
+applySize();
+
+/* ══════════════════════════════════════════════════
+   Viewport transform
+══════════════════════════════════════════════════ */
+function applyTransform() {
+  container.style.transform =
+    `translate(calc(-50% + ${vTX}px), calc(-50% + ${vTY}px)) scale(${vScale})`;
+}
+applyTransform();
+
+/* ══════════════════════════════════════════════════
+   Upload
+══════════════════════════════════════════════════ */
+document.getElementById('upload-btn').addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', e => {
+  [...e.target.files].forEach(addLayer);
+  fileInput.value = '';
+});
+
+function addLayer(file) {
+  const reader = new FileReader();
+  reader.onload = evt => {
+    const img = new Image();
+    img.onload = () => {
+      const cw = parseInt(iw.value) || 300;
+      const ch = parseInt(ih.value) || 300;
+      const maxDim = Math.min(cw, ch) * 0.7;
+      let [lw, lh] = [img.naturalWidth, img.naturalHeight];
+      if (lw > maxDim || lh > maxDim) {
+        const r = Math.min(maxDim / lw, maxDim / lh);
+        lw *= r; lh *= r;
+      }
+      const layer = {
+        id: nextId++,
+        name: file.name,
+        src: evt.target.result,
+        x: (cw - lw) / 2,
+        y: (ch - lh) / 2,
+        width: lw,
+        height: lh,
+        element: null,
+      };
+      layers.push(layer);
+      createLayerEl(layer);
+      syncEmptyHint();
+      renderPanel();
+    };
+    img.src = evt.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+/* ══════════════════════════════════════════════════
+   Layer DOM
+══════════════════════════════════════════════════ */
+function createLayerEl(layer) {
+  const el = document.createElement('div');
+  el.className = 'img-layer';
+  el.dataset.id = layer.id;
+  setLayerTransform(el, layer);
+
+  const img = document.createElement('img');
+  img.src = layer.src;
+  img.draggable = false;
+  el.appendChild(img);
+
+  const handle = document.createElement('div');
+  handle.className = 'resize-handle';
+  handle.innerHTML =
+    `<svg width="28" height="28" viewBox="0 0 24 24" fill="none"
+       stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="15 3 21 3 21 9"/>
+      <polyline points="9 21 3 21 3 15"/>
+      <line x1="21" y1="3" x2="14" y2="10"/>
+      <line x1="3" y1="21" x2="10" y2="14"/>
+    </svg>`;
+  el.appendChild(handle);
+
+  layer.element = el;
+  canvas.appendChild(el);
+  attachLayerPointerEvents(layer);
+}
+
+function setLayerTransform(el, layer) {
+  el.style.left   = layer.x + 'px';
+  el.style.top    = layer.y + 'px';
+  el.style.width  = layer.width + 'px';
+  el.style.height = layer.height + 'px';
+}
+
+/* ══════════════════════════════════════════════════
+   Selection
+══════════════════════════════════════════════════ */
+function selectLayer(id) {
+  if (selectedId === id) return;
+  if (selectedId !== null) {
+    layers.find(l => l.id === selectedId)?.element?.classList.remove('selected');
+  }
+  selectedId = id;
+  if (id !== null) {
+    const layer = layers.find(l => l.id === id);
+    if (layer?.element) {
+      layer.element.classList.add('selected');
+      canvas.appendChild(layer.element); // bring to front
+    }
+  }
+}
+
+/* ══════════════════════════════════════════════════
+   Layer pointer interactions  (move + pinch resize)
+══════════════════════════════════════════════════ */
+function attachLayerPointerEvents(layer) {
+  const el     = layer.element;
+  const handle = el.querySelector('.resize-handle');
+
+  // ── per-pointer tracking ──────────────────────
+  const ptrs = new Map(); // pointerId → {x,y}
+
+  function getActivePairs() {
+    return [...ptrs.keys()];
+  }
+
+  // drag-move state
+  let moveState   = null; // { startPX, startPY, startLX, startLY }
+
+  // pinch-resize state
+  let pinchState  = null; // { startDist, startW, startH, ratio }
+
+  // handle drag-resize state
+  let resizeState = null; // { startPX, startW, startH, ratio }
+
+  el.addEventListener('pointerdown', e => {
+    // Ignore clicks on the delete-style outside panel
+    el.setPointerCapture(e.pointerId);
+    ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    e.stopPropagation();
+
+    const isHandle = handle.contains(e.target) || e.target === handle;
+
+    if (ptrs.size === 1) {
+      selectLayer(layer.id);
+      if (isHandle) {
+        // single-finger drag on handle → resize
+        resizeState = {
+          startPX: e.clientX,
+          startW: layer.width,
+          startH: layer.height,
+          ratio: layer.height / layer.width,
+        };
+      } else {
+        // single-finger on body → move
+        moveState = {
+          startPX: e.clientX,
+          startPY: e.clientY,
+          startLX: layer.x,
+          startLY: layer.y,
+        };
+      }
+      pinchState = null;
+    } else if (ptrs.size === 2) {
+      // Two fingers → pinch resize
+      moveState = null;
+      resizeState = null;
+      const ids  = getActivePairs();
+      const p1   = ptrs.get(ids[0]);
+      const p2   = ptrs.get(ids[1]);
+      const dist = ptDist(p1, p2);
+      pinchState = {
+        startDist: dist,
+        startW: layer.width,
+        startH: layer.height,
+        ratio: layer.height / layer.width,
+      };
+    }
+  });
+
+  el.addEventListener('pointermove', e => {
+    if (!ptrs.has(e.pointerId)) return;
+    ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    e.stopPropagation();
+    e.preventDefault();
+
+    if (pinchState && ptrs.size === 2) {
+      const ids  = getActivePairs();
+      const p1   = ptrs.get(ids[0]);
+      const p2   = ptrs.get(ids[1]);
+      const dist = ptDist(p1, p2);
+      const s    = dist / pinchState.startDist;
+      layer.width  = Math.max(20, pinchState.startW * s);
+      layer.height = layer.width * pinchState.ratio;
+      setLayerTransform(el, layer);
+    } else if (moveState) {
+      const dx = (e.clientX - moveState.startPX) / vScale;
+      const dy = (e.clientY - moveState.startPY) / vScale;
+      layer.x = moveState.startLX + dx;
+      layer.y = moveState.startLY + dy;
+      setLayerTransform(el, layer);
+    } else if (resizeState) {
+      const dx = (e.clientX - resizeState.startPX) / vScale;
+      layer.width  = Math.max(20, resizeState.startW + dx);
+      layer.height = layer.width * resizeState.ratio;
+      setLayerTransform(el, layer);
+    }
+  }, { passive: false });
+
+  function onPointerUp(e) {
+    ptrs.delete(e.pointerId);
+    e.stopPropagation();
+    if (ptrs.size < 2) pinchState  = null;
+    if (ptrs.size === 0) {
+      moveState   = null;
+      resizeState = null;
+    }
+  }
+
+  el.addEventListener('pointerup',     onPointerUp);
+  el.addEventListener('pointercancel', onPointerUp);
+}
+
+/* ══════════════════════════════════════════════════
+   Viewport pan + pinch-zoom  (on background touches)
+══════════════════════════════════════════════════ */
+const vpPtrs = new Map(); // pointerId → {x,y}
+let vpPinch  = null; // { startDist, startScale, startMidX, startMidY, startTX, startTY }
+let vpPan    = null; // { startX, startY, startTX, startTY, moved }
+
+function isLayerEl(el) {
+  return !!el.closest('.img-layer');
+}
+
+viewport.addEventListener('pointerdown', e => {
+  if (isLayerEl(e.target)) return;
+  viewport.setPointerCapture(e.pointerId);
+  vpPtrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+  if (vpPtrs.size === 2) {
+    vpPan = null;
+    const [p1, p2] = [...vpPtrs.values()];
+    vpPinch = {
+      startDist: ptDist(p1, p2),
+      startScale: vScale,
+      startMidX: (p1.x + p2.x) / 2,
+      startMidY: (p1.y + p2.y) / 2,
+      startTX: vTX,
+      startTY: vTY,
+    };
+  } else if (vpPtrs.size === 1) {
+    vpPinch = null;
+    vpPan = {
+      startX: e.clientX,
+      startY: e.clientY,
+      startTX: vTX,
+      startTY: vTY,
+      moved: false,
+    };
+  }
+}, { passive: true });
+
+viewport.addEventListener('pointermove', e => {
+  if (!vpPtrs.has(e.pointerId)) return;
+  vpPtrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  e.preventDefault();
+
+  if (vpPinch && vpPtrs.size === 2) {
+    const [p1, p2] = [...vpPtrs.values()];
+    const dist = ptDist(p1, p2);
+    const mid  = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+    vScale = Math.max(0.05, Math.min(12, vpPinch.startScale * (dist / vpPinch.startDist)));
+    vTX = vpPinch.startTX + (mid.x - vpPinch.startMidX);
+    vTY = vpPinch.startTY + (mid.y - vpPinch.startMidY);
+    applyTransform();
+  } else if (vpPan) {
+    const dx = e.clientX - vpPan.startX;
+    const dy = e.clientY - vpPan.startY;
+    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) vpPan.moved = true;
+    vTX = vpPan.startTX + dx;
+    vTY = vpPan.startTY + dy;
+    applyTransform();
+  }
+}, { passive: false });
+
+function vpPointerUp(e) {
+  vpPtrs.delete(e.pointerId);
+  if (vpPan && !vpPan.moved) {
+    // tap on background → deselect
+    selectLayer(null);
+  }
+  if (vpPtrs.size < 2) vpPinch = null;
+  if (vpPtrs.size === 0) vpPan = null;
+}
+viewport.addEventListener('pointerup',     vpPointerUp);
+viewport.addEventListener('pointercancel', vpPointerUp);
+
+// wheel zoom (desktop)
+viewport.addEventListener('wheel', e => {
+  e.preventDefault();
+  const f = e.deltaY < 0 ? 1.12 : 0.89;
+  vScale = Math.max(0.05, Math.min(12, vScale * f));
+  applyTransform();
+}, { passive: false });
+
+/* ══════════════════════════════════════════════════
+   Layer Panel
+══════════════════════════════════════════════════ */
+function renderPanel() {
+  layerList.innerHTML = '';
+  // top layer first
+  [...layers].reverse().forEach(layer => {
+    const item = document.createElement('div');
+    item.className = 'layer-item';
+    item.dataset.id = layer.id;
+
+    // drag handle
+    const dh = document.createElement('div');
+    dh.className = 'drag-handle';
+    dh.innerHTML = '<span></span><span></span><span></span>';
+    item.appendChild(dh);
+
+    // thumb
+    const thumb = document.createElement('img');
+    thumb.src = layer.src;
+    thumb.className = 'layer-thumb';
+    item.appendChild(thumb);
+
+    // name
+    const name = document.createElement('div');
+    name.className = 'layer-name';
+    name.textContent = layer.name;
+    item.appendChild(name);
+
+    // delete
+    const del = document.createElement('button');
+    del.className = 'delete-btn';
+    del.textContent = '删除';
+    del.addEventListener('click', e => { e.stopPropagation(); deleteLayer(layer.id); });
+    item.appendChild(del);
+
+    // tap to select
+    item.addEventListener('click', e => {
+      if (e.target === del) return;
+      selectLayer(layer.id);
+    });
+
+    // drag-to-reorder
+    attachItemDrag(item, layer.id, dh);
+    layerList.appendChild(item);
+  });
+}
+
+function deleteLayer(id) {
+  const layer = layers.find(l => l.id === id);
+  layer?.element?.remove();
+  layers = layers.filter(l => l.id !== id);
+  if (selectedId === id) selectLayer(null);
+  syncEmptyHint();
+  renderPanel();
+}
+
+function syncEmptyHint() {
+  emptyHint.style.display = layers.length === 0 ? 'flex' : 'none';
+}
+
+/* ══════════════════════════════════════════════════
+   Layer Panel drag-to-reorder  (HTML5 + touch)
+══════════════════════════════════════════════════ */
+// HTML5 drag (desktop)
+function attachItemDrag(item, id, handle) {
+  item.draggable = true;
+
+  item.addEventListener('dragstart', e => {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', id);
+    item.classList.add('is-dragging');
+  });
+  item.addEventListener('dragend', () => item.classList.remove('is-dragging'));
+
+  item.addEventListener('dragover', e => {
+    e.preventDefault();
+    const mid = item.getBoundingClientRect().top + item.offsetHeight / 2;
+    item.classList.toggle('drag-over-top',    e.clientY < mid);
+    item.classList.toggle('drag-over-bottom', e.clientY >= mid);
+  });
+  item.addEventListener('dragleave', () => {
+    item.classList.remove('drag-over-top', 'drag-over-bottom');
+  });
+  item.addEventListener('drop', e => {
+    e.preventDefault();
+    item.classList.remove('drag-over-top', 'drag-over-bottom');
+    const srcId = parseInt(e.dataTransfer.getData('text/plain'));
+    if (srcId === id) return;
+    const above = e.clientY < item.getBoundingClientRect().top + item.offsetHeight / 2;
+    reorder(srcId, id, above);
+  });
+
+  // Touch drag (mobile)
+  let tState = null;
+
+  handle.addEventListener('touchstart', e => {
+    e.stopPropagation();
+    const t = e.touches[0];
+    const rect = item.getBoundingClientRect();
+    tState = {
+      id,
+      item,
+      ghost: null,
+      offX: t.clientX - rect.left,
+      offY: t.clientY - rect.top,
+      overItem: null,
+    };
+  }, { passive: true });
+
+  handle.addEventListener('touchmove', e => {
+    if (!tState) return;
+    e.stopPropagation();
+    e.preventDefault();
+    const t = e.touches[0];
+
+    if (!tState.ghost) {
+      const g = document.createElement('div');
+      g.className = 'layer-ghost';
+      g.style.width = item.offsetWidth + 'px';
+      // copy contents
+      g.appendChild(createMiniHandle());
+      const ti = document.createElement('img');
+      ti.src = item.querySelector('.layer-thumb')?.src || '';
+      ti.className = 'layer-thumb';
+      g.appendChild(ti);
+      const tn = document.createElement('div');
+      tn.className = 'layer-name';
+      tn.textContent = item.querySelector('.layer-name')?.textContent || '';
+      g.appendChild(tn);
+      document.body.appendChild(g);
+      tState.ghost = g;
+      item.classList.add('is-dragging');
+    }
+
+    tState.ghost.style.left = (t.clientX - tState.offX) + 'px';
+    tState.ghost.style.top  = (t.clientY - tState.offY) + 'px';
+
+    // detect hover
+    tState.ghost.style.display = 'none';
+    const el = document.elementFromPoint(t.clientX, t.clientY);
+    tState.ghost.style.display = '';
+    const overItem = el?.closest('.layer-item');
+    if (tState.overItem && tState.overItem !== overItem) {
+      tState.overItem.classList.remove('drag-over-top', 'drag-over-bottom');
+    }
+    if (overItem && overItem !== item) {
+      const rect = overItem.getBoundingClientRect();
+      const above = t.clientY < rect.top + overItem.offsetHeight / 2;
+      overItem.classList.toggle('drag-over-top',    above);
+      overItem.classList.toggle('drag-over-bottom', !above);
+      tState.overItem = overItem;
+      tState.above = above;
+    } else {
+      tState.overItem = null;
+    }
+  }, { passive: false });
+
+  handle.addEventListener('touchend', e => {
+    if (!tState) return;
+    e.stopPropagation();
+    if (tState.ghost) {
+      tState.ghost.remove();
+      tState.ghost = null;
+    }
+    item.classList.remove('is-dragging');
+    if (tState.overItem) {
+      const overId = parseInt(tState.overItem.dataset.id);
+      tState.overItem.classList.remove('drag-over-top', 'drag-over-bottom');
+      reorder(tState.id, overId, tState.above !== false);
+    }
+    tState = null;
+  }, { passive: true });
+}
+
+function createMiniHandle() {
+  const d = document.createElement('div');
+  d.className = 'drag-handle';
+  d.innerHTML = '<span></span><span></span><span></span>';
+  return d;
+}
+
+// panel order is reversed; "above" in panel = higher z-order in layers
+function reorder(srcId, destId, above) {
+  // Layers array: index 0 = bottom, last = top.
+  // Panel shows top-first, so "above" in panel means higher z-index.
+  const si = layers.findIndex(l => l.id === srcId);
+  const di = layers.findIndex(l => l.id === destId);
+  if (si === -1 || di === -1 || si === di) return;
+
+  const [moved] = layers.splice(si, 1);
+  // After splice di may have shifted
+  const newDi = layers.findIndex(l => l.id === destId);
+
+  // above in panel = higher layer index, but panel is reversed:
+  // dropping above in panel = inserting after destId in layers array
+  // dropping below in panel = inserting before destId in layers array
+  const insertAt = above ? newDi + 1 : newDi;
+  layers.splice(insertAt, 0, moved);
+
+  // sync DOM z-order
+  layers.forEach(l => canvas.appendChild(l.element));
+  renderPanel();
+}
+
+/* ══════════════════════════════════════════════════
+   Export
+══════════════════════════════════════════════════ */
+document.getElementById('export-btn').addEventListener('click', async () => {
+  selectLayer(null);
+  const w = parseInt(iw.value) || 300;
+  const h = parseInt(ih.value) || 300;
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, w, h);
+  for (const layer of layers) {
+    const img = await loadImg(layer.src);
+    ctx.drawImage(img, layer.x, layer.y, layer.width, layer.height);
+  }
+  const a = document.createElement('a');
+  a.download = 'export.png';
+  a.href = c.toDataURL('image/png');
+  a.click();
+});
+
+function loadImg(src) {
+  return new Promise(res => {
+    const img = new Image();
+    img.onload = () => res(img);
+    img.src = src;
+  });
+}
+
+/* ══════════════════════════════════════════════════
+   Drawer (bottom sheet)
+══════════════════════════════════════════════════ */
+const panel     = document.getElementById('layer-panel');
+const drawerBar = document.getElementById('drawer-bar');
+
+const SNAP_COLLAPSED = 120;
+const SNAP_HALF      = 290;
+function snapFull() {
+  // leave topbar + some breathing room visible
+  return Math.min(Math.round(window.innerHeight * 0.76), window.innerHeight - 110);
+}
+
+let drawerH    = SNAP_COLLAPSED;
+let ddragging  = false;
+let dStartY    = 0;
+let dStartH    = 0;
+let dLastY     = 0;
+let dLastT     = 0;
+let dVY        = 0;   // velocity px/ms – positive = downward
+let dMoved     = false;
+
+function setDrawerH(h, animate = false) {
+  drawerH = Math.max(SNAP_COLLAPSED, Math.min(h, snapFull()));
+  panel.style.transition = animate
+    ? 'height 0.32s cubic-bezier(0.4, 0, 0.2, 1)'
+    : 'none';
+  panel.style.height = drawerH + 'px';
+}
+
+function snapDrawer(vy) {
+  const snaps = [SNAP_COLLAPSED, SNAP_HALF, snapFull()];
+
+  // velocity-based snap (flick gesture)
+  if (vy < -0.4) {                               // fast upward flick
+    const next = snaps.find(s => s > drawerH + 30);
+    setDrawerH(next ?? snaps[snaps.length - 1], true);
+    return;
+  }
+  if (vy > 0.4) {                                // fast downward flick
+    const prev = [...snaps].reverse().find(s => s < drawerH - 30);
+    setDrawerH(prev ?? SNAP_COLLAPSED, true);
+    return;
+  }
+
+  // position-based: nearest snap point
+  let nearest = snaps[0], minDist = Infinity;
+  for (const s of snaps) {
+    const d = Math.abs(s - drawerH);
+    if (d < minDist) { minDist = d; nearest = s; }
+  }
+  setDrawerH(nearest, true);
+}
+
+drawerBar.addEventListener('pointerdown', e => {
+  e.stopPropagation();
+  drawerBar.setPointerCapture(e.pointerId);
+  ddragging = true;
+  dMoved    = false;
+  dStartY   = e.clientY;
+  dStartH   = drawerH;
+  dLastY    = e.clientY;
+  dLastT    = e.timeStamp;
+  dVY       = 0;
+  panel.style.transition = 'none';
+});
+
+drawerBar.addEventListener('pointermove', e => {
+  if (!ddragging) return;
+  const dy = dStartY - e.clientY;      // drag up → positive → expand
+  if (Math.abs(dy) > 6) dMoved = true;
+  setDrawerH(dStartH + dy);
+
+  const dt = e.timeStamp - dLastT;
+  if (dt > 0) dVY = (e.clientY - dLastY) / dt;
+  dLastY = e.clientY;
+  dLastT = e.timeStamp;
+});
+
+drawerBar.addEventListener('pointerup', e => {
+  if (!ddragging) return;
+  ddragging = false;
+  if (!dMoved) {
+    // tap: toggle between collapsed ↔ half (or full if already half)
+    if (drawerH <= SNAP_COLLAPSED + 10) {
+      setDrawerH(SNAP_HALF, true);
+    } else if (drawerH >= snapFull() - 10) {
+      setDrawerH(SNAP_COLLAPSED, true);
+    } else {
+      setDrawerH(SNAP_COLLAPSED, true);
+    }
+  } else {
+    snapDrawer(dVY);
+  }
+});
+
+drawerBar.addEventListener('pointercancel', () => {
+  ddragging = false;
+  snapDrawer(0);
+});
+
+// initialise
+setDrawerH(SNAP_COLLAPSED);
+
+/* ══════════════════════════════════════════════════
+   Utils
+══════════════════════════════════════════════════ */
+function ptDist(a, b) {
+  const dx = a.x - b.x, dy = a.y - b.y;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+</script>
+</body>
+</html>
