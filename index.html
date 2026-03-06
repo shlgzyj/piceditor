@@ -136,20 +136,21 @@ body {
   overflow: hidden;
 }
 
-/* empty state */
+/* default guide image (shown when no layers) */
 #empty-hint {
   position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
+  left: 14.5%;
+  top: 20.6%;
+  width: 72.3%;
   pointer-events: none;
-  opacity: 0.28;
+  display: block;
 }
-#empty-hint svg { width: 52px; height: 52px; }
-#empty-hint p { font-size: 13px; font-weight: 500; }
+#empty-hint img {
+  width: 100%;
+  height: auto;
+  display: block;
+  -webkit-user-drag: none;
+}
 
 /* ─── Image Layers ────────────────────────────────── */
 .img-layer {
@@ -194,47 +195,19 @@ body {
 }
 .img-layer.selected .resize-handle { display: flex; }
 
-/* ─── Layer Panel (bottom-sheet drawer) ──────────── */
+/* ─── Layer Panel ─────────────────────────────────── */
 #layer-panel {
-  position: fixed;
-  bottom: 0;
-  left: 8px;
-  right: 8px;
-  height: 120px;           /* JS controls this */
+  flex-shrink: 0;
+  margin: 4px 8px 8px;
+  padding: 10px 12px 12px;
   background: var(--yellow);
   border: 6px solid var(--border-t);
   border-radius: var(--radius);
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 0 12px 12px;
-  overflow: hidden;
-  z-index: 500;
-  will-change: height;
-  touch-action: none;
+  max-height: 44vh;
 }
-
-/* drag bar at top of drawer */
-#drawer-bar {
-  flex-shrink: 0;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: grab;
-  touch-action: none;
-  user-select: none;
-}
-#drawer-bar:active { cursor: grabbing; }
-
-#drawer-pill {
-  width: 40px;
-  height: 5px;
-  background: rgba(0, 0, 0, 0.22);
-  border-radius: 999px;
-  transition: background .15s;
-}
-#drawer-bar:active #drawer-pill { background: rgba(0,0,0,0.4); }
 
 #layers-scroll {
   overflow-y: auto;
@@ -326,7 +299,6 @@ body {
   display: flex;
   justify-content: center;
   flex-shrink: 0;
-  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 #upload-btn {
@@ -383,12 +355,7 @@ body {
   <div id="editor-container">
     <div id="canvas-area">
       <div id="empty-hint">
-        <svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="1.5" stroke-linecap="round">
-          <rect x="3" y="3" width="18" height="18" rx="2"/>
-          <circle cx="8.5" cy="8.5" r="1.5"/>
-          <path d="M21 15l-5-5L5 21"/>
-        </svg>
-        <p>上传图片开始编辑</p>
+        <img src="默认引导.gif" alt="上传图片开始编辑">
       </div>
     </div>
   </div>
@@ -396,7 +363,6 @@ body {
 
 <!-- Layer Panel -->
 <div id="layer-panel">
-  <div id="drawer-bar"><div id="drawer-pill"></div></div>
   <div id="layers-scroll">
     <div id="layers-list"></div>
   </div>
@@ -807,7 +773,7 @@ function deleteLayer(id) {
 }
 
 function syncEmptyHint() {
-  emptyHint.style.display = layers.length === 0 ? 'flex' : 'none';
+  emptyHint.style.display = layers.length === 0 ? 'block' : 'none';
 }
 
 /* ══════════════════════════════════════════════════
@@ -983,110 +949,6 @@ function loadImg(src) {
     img.src = src;
   });
 }
-
-/* ══════════════════════════════════════════════════
-   Drawer (bottom sheet)
-══════════════════════════════════════════════════ */
-const panel     = document.getElementById('layer-panel');
-const drawerBar = document.getElementById('drawer-bar');
-
-const SNAP_COLLAPSED = 120;
-const SNAP_HALF      = 290;
-function snapFull() {
-  // leave topbar + some breathing room visible
-  return Math.min(Math.round(window.innerHeight * 0.76), window.innerHeight - 110);
-}
-
-let drawerH    = SNAP_COLLAPSED;
-let ddragging  = false;
-let dStartY    = 0;
-let dStartH    = 0;
-let dLastY     = 0;
-let dLastT     = 0;
-let dVY        = 0;   // velocity px/ms – positive = downward
-let dMoved     = false;
-
-function setDrawerH(h, animate = false) {
-  drawerH = Math.max(SNAP_COLLAPSED, Math.min(h, snapFull()));
-  panel.style.transition = animate
-    ? 'height 0.32s cubic-bezier(0.4, 0, 0.2, 1)'
-    : 'none';
-  panel.style.height = drawerH + 'px';
-}
-
-function snapDrawer(vy) {
-  const snaps = [SNAP_COLLAPSED, SNAP_HALF, snapFull()];
-
-  // velocity-based snap (flick gesture)
-  if (vy < -0.4) {                               // fast upward flick
-    const next = snaps.find(s => s > drawerH + 30);
-    setDrawerH(next ?? snaps[snaps.length - 1], true);
-    return;
-  }
-  if (vy > 0.4) {                                // fast downward flick
-    const prev = [...snaps].reverse().find(s => s < drawerH - 30);
-    setDrawerH(prev ?? SNAP_COLLAPSED, true);
-    return;
-  }
-
-  // position-based: nearest snap point
-  let nearest = snaps[0], minDist = Infinity;
-  for (const s of snaps) {
-    const d = Math.abs(s - drawerH);
-    if (d < minDist) { minDist = d; nearest = s; }
-  }
-  setDrawerH(nearest, true);
-}
-
-drawerBar.addEventListener('pointerdown', e => {
-  e.stopPropagation();
-  drawerBar.setPointerCapture(e.pointerId);
-  ddragging = true;
-  dMoved    = false;
-  dStartY   = e.clientY;
-  dStartH   = drawerH;
-  dLastY    = e.clientY;
-  dLastT    = e.timeStamp;
-  dVY       = 0;
-  panel.style.transition = 'none';
-});
-
-drawerBar.addEventListener('pointermove', e => {
-  if (!ddragging) return;
-  const dy = dStartY - e.clientY;      // drag up → positive → expand
-  if (Math.abs(dy) > 6) dMoved = true;
-  setDrawerH(dStartH + dy);
-
-  const dt = e.timeStamp - dLastT;
-  if (dt > 0) dVY = (e.clientY - dLastY) / dt;
-  dLastY = e.clientY;
-  dLastT = e.timeStamp;
-});
-
-drawerBar.addEventListener('pointerup', e => {
-  if (!ddragging) return;
-  ddragging = false;
-  if (!dMoved) {
-    // tap: toggle between collapsed ↔ half (or full if already half)
-    if (drawerH <= SNAP_COLLAPSED + 10) {
-      setDrawerH(SNAP_HALF, true);
-    } else if (drawerH >= snapFull() - 10) {
-      setDrawerH(SNAP_COLLAPSED, true);
-    } else {
-      setDrawerH(SNAP_COLLAPSED, true);
-    }
-  } else {
-    snapDrawer(dVY);
-  }
-});
-
-drawerBar.addEventListener('pointercancel', () => {
-  ddragging = false;
-  snapDrawer(0);
-});
-
-// initialise
-setDrawerH(SNAP_COLLAPSED);
 
 /* ══════════════════════════════════════════════════
    Utils
